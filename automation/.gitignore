@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local configuration and logs
+.env
+logs/*.log
+
+# Runtime data (directory placeholders remain tracked)
+data/uploads/*
+!data/uploads/.gitkeep
+data/workspace/*
+!data/workspace/.gitkeep
+data/outputs/*
+!data/outputs/.gitkeep
+

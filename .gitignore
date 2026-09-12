@@ -1,0 +1,3 @@
+# This local staging repository contains the Automation platform as a subproject.
+# Its own .gitignore handles runtime data, environments, and generated artifacts.
+automation/To Fix/
