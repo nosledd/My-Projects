@@ -2,6 +2,7 @@
 from __future__ import annotations
 from hashlib import sha256
 from pathlib import Path
+from time import time
 from uuid import uuid4
 from automation.domain.models import ArtifactKind, ArtifactReference
 
@@ -30,6 +31,21 @@ class LocalArtifactStore:
     def path_for(self, artifact_id: str) -> Path:
         """Return a managed input path for a specialised local tool."""
         return self._find(self._uploads, artifact_id)
+
+    def output_path_for(self, artifact_id: str) -> Path:
+        """Return one managed output selected by its unguessable artifact ID."""
+        return self._find(self._outputs, artifact_id)
+
+    def cleanup_expired(self, max_age_seconds: int) -> int:
+        """Remove only old managed uploads and outputs for a short-lived web beta."""
+        cutoff = time() - max_age_seconds
+        removed = 0
+        for directory in (self._uploads, self._outputs):
+            for path in directory.iterdir():
+                if path.is_file() and path.name != ".gitkeep" and path.stat().st_mtime < cutoff:
+                    path.unlink(missing_ok=True)
+                    removed += 1
+        return removed
     def create_output(self, name: str, media_type: str, content: bytes) -> ArtifactReference:
         safe_name = Path(name).name
         if safe_name != name or not safe_name: raise ValueError("invalid output name")

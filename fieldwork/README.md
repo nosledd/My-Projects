@@ -29,6 +29,18 @@ explicitly approve or cancel creation of the output file.
   files, and generated outputs.
 - `logs/`: local operational logs.
 
-Copy `.env.example` to `.env` when configuration is needed. The skeleton does not
-load environment variables yet; that responsibility belongs to a later settings
-module.
+Copy `.env.example` to `.env` when configuration is needed. Settings are read
+from environment variables at startup.
+
+## Hosting certificate generation
+
+The repository is a monorepo. The deployable application is in `fieldwork/`.
+For a small public beta, deploy it as a Docker web service and use
+`fieldwork/Dockerfile` from the repository root. It binds to the platform's
+`PORT`, exposes `GET /health`, returns a ZIP download link after confirmation,
+and removes managed uploads/outputs after `AUTOMATION_RETENTION_MINUTES`.
+
+The Docker configuration disables Gemma (`AUTOMATION_ENABLE_GEMMA=false`) so
+the public beta supports deterministic Certificate generation only. Do not
+enable generic/Excel AI automation until you have a secured, reachable Ollama
+or other model service.

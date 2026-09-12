@@ -13,6 +13,12 @@ from automation.adapters.tools.certificate_output import certificate_filename, m
 class AutomationWorkflow:
     def __init__(self, artifacts: object, planner: object, plans: object, invoice_planner: object | None = None, certificate_planner: object | None = None) -> None:
         self._artifacts, self._planner, self._plans, self._invoice_planner, self._certificate_planner = artifacts, planner, plans, invoice_planner, certificate_planner
+
+    def cleanup_expired(self, max_age_seconds: int) -> int:
+        return self._artifacts.cleanup_expired(max_age_seconds)
+
+    def output_path_for(self, artifact_id: str):
+        return self._artifacts.output_path_for(artifact_id)
     def propose(self, instruction: str, input_paths: list[str], progress: Callable[[str], None] | None = None):
         emit = progress or (lambda _: None)
         emit("Validating uploaded files")

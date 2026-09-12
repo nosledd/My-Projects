@@ -7,12 +7,14 @@ from dataclasses import dataclass, field
 from email.parser import BytesParser
 from email.policy import default
 import json
+import mimetypes
+import os
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock, Thread
 from time import time
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 from uuid import uuid4
 
 from automation.adapters.llm.ollama_client import OllamaClient
@@ -719,13 +721,19 @@ class AutomationHandler(BaseHTTPRequestHandler):
     chat_client: OllamaClient
     root: Path
     jobs = JobStore()
+    retention_seconds = 60 * 60
+    gemma_enabled = True
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/":
             self._html(PAGE)
+        elif self.path == "/health":
+            self._json({"status": "ok"})
         elif self.path.startswith("/api/jobs/"):
             job = self.jobs.get(self.path.rsplit("/", 1)[-1])
             self._json(job or {"error": "Job not found"}, HTTPStatus.OK if job else HTTPStatus.NOT_FOUND)
+        elif self.path.startswith("/api/download/"):
+            self._download(self.path.rsplit("/", 1)[-1])
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -739,12 +747,16 @@ class AutomationHandler(BaseHTTPRequestHandler):
             self._json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
 
     def _start_automation(self) -> None:
+        self.workflow.cleanup_expired(self.retention_seconds)
+        self._cleanup_workspace()
         fields = self._form()
         instruction = self._field(fields, "instruction")
         output_format = self._field(fields, "output_format")
         if output_format and output_format != "auto": instruction += f"\n\nRequested output format: {output_format.upper()}."
         paths = self._save_uploads(fields)
         if not instruction.strip() or not paths: raise ValueError("Provide an instruction and at least one file.")
+        if not self.gemma_enabled and "certificate" not in instruction.lower():
+            raise ValueError("This hosted beta currently supports Certificate generation only.")
         job = self.jobs.create(); self.jobs.event(job.job_id, "Upload received; preparing local workspace")
         Thread(target=self._run_job, args=(job.job_id, instruction, paths), daemon=True).start()
         self._json({"job_id": job.job_id}, HTTPStatus.ACCEPTED)
@@ -759,7 +771,34 @@ class AutomationHandler(BaseHTTPRequestHandler):
     def _confirm(self) -> None:
         body = self._body_json(); plan_id = str(body.get("plan_id", "")); approved = bool(body.get("approved"))
         result = self.workflow.execute(plan_id, approved)
-        self._json({"summary": result.summary, "outputs": [artifact.display_name for artifact in result.output_artifacts]})
+        self._json({
+            "summary": result.summary,
+            "outputs": [artifact.display_name for artifact in result.output_artifacts],
+            "downloads": [
+                {"name": artifact.display_name, "url": f"/api/download/{artifact.artifact_id}"}
+                for artifact in result.output_artifacts
+            ],
+        })
+
+    def _download(self, artifact_id: str) -> None:
+        if not artifact_id.isalnum():
+            self._json({"error": "Invalid download identifier"}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            path = self.workflow.output_path_for(artifact_id)
+        except ValueError:
+            self._json({"error": "Download not found or it has expired"}, HTTPStatus.NOT_FOUND)
+            return
+        content = path.read_bytes()
+        media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        filename = path.name.split("_", 1)[-1].replace('"', "")
+        self.send_response(HTTPStatus.OK)
+        self._security_headers()
+        self.send_header("Content-Type", media_type)
+        self.send_header("Content-Length", str(len(content)))
+        self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(filename)}")
+        self.end_headers()
+        self.wfile.write(content)
 
     def _chat(self) -> None:
         message = str(self._body_json().get("message", "")).strip()
@@ -798,10 +837,26 @@ class AutomationHandler(BaseHTTPRequestHandler):
         return body
 
     def _json(self, body: dict[str, object], status: HTTPStatus = HTTPStatus.OK) -> None:
-        data = json.dumps(body).encode(); self.send_response(status); self.send_header("Content-Type", "application/json; charset=utf-8"); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+        data = json.dumps(body).encode(); self.send_response(status); self._security_headers(); self.send_header("Content-Type", "application/json; charset=utf-8"); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
 
     def _html(self, content: str) -> None:
-        data = content.encode(); self.send_response(HTTPStatus.OK); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+        content = content.replace("__GEMMA_ENABLED__", "true" if self.gemma_enabled else "false")
+        data = content.encode(); self.send_response(HTTPStatus.OK); self._security_headers(); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+
+    def _cleanup_workspace(self) -> None:
+        """Remove expired web uploads and pending plans alongside generated files."""
+        cutoff = time() - self.retention_seconds
+        for directory in (self.root / "data" / "workspace" / "web_uploads", self.root / "data" / "workspace" / "plans"):
+            if not directory.exists():
+                continue
+            for path in directory.iterdir():
+                if path.is_file() and path.stat().st_mtime < cutoff:
+                    path.unlink(missing_ok=True)
+
+    def _security_headers(self) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
 
     def log_message(self, format: str, *args: object) -> None: return
 
@@ -810,6 +865,8 @@ def serve(root: Path, host: str = "127.0.0.1", port: int = 8080) -> None:
     AutomationHandler.root = root.resolve(); AutomationHandler.workflow = build(AutomationHandler.root)
     settings = Settings.from_environment(AutomationHandler.root)
     AutomationHandler.chat_client = OllamaClient(settings.ollama_url, settings.ollama_model)
+    AutomationHandler.retention_seconds = settings.retention_minutes * 60
+    AutomationHandler.gemma_enabled = settings.enable_gemma
     server = ThreadingHTTPServer((host, port), AutomationHandler)
     print(f"Open http://{host}:{port} in your browser. Press Ctrl+C to stop.")
     server.serve_forever()

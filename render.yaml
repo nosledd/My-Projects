@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: fieldwork
+    runtime: docker
+    dockerfilePath: ./fieldwork/Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: AUTOMATION_ENABLE_GEMMA
+        value: "false"
+      - key: AUTOMATION_RETENTION_MINUTES
+        value: "60"
