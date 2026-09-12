@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Fieldwork — Certificate Generator</title>
+  <style>
+    :root { --ink:#121210; --soft:#6b6b66; --line:#e7e5e0; --paper:#fff; --wash:#faf9f7; --danger:#a32118; font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    * { box-sizing:border-box; } body { margin:0; min-height:100vh; padding:clamp(16px,4vw,56px) 16px; display:grid; place-items:start center; color:var(--ink); background:var(--wash); }
+    main { width:min(100%,760px); background:var(--paper); border:1px solid var(--line); border-radius:18px; padding:clamp(24px,5vw,48px); box-shadow:0 20px 60px -34px #14120e44; }
+    .brand { display:flex; gap:10px; align-items:center; margin-bottom:44px; font-size:19px; font-weight:650; }.dot { width:8px; height:8px; border-radius:99px; background:var(--ink); }.tag { font:600 11px ui-monospace,Consolas,monospace; letter-spacing:.1em; color:#9d9b95; }
+    h1 { margin:0 0 12px; letter-spacing:-.025em; font-size:clamp(29px,5vw,42px); line-height:1.08; } .lede { color:var(--soft); line-height:1.55; max-width:52ch; margin:0; }
+    hr { border:0; border-top:1px solid var(--line); margin:34px 0; }.label { display:block; margin:0 0 9px; font-size:14px; font-weight:650; }.hint { margin:7px 0 0; font-size:12.5px; color:#8b8983; line-height:1.45; }
+    input { width:100%; border:1px dashed #c9c6be; border-radius:12px; padding:13px; color:var(--soft); background:#fff; } .field { margin:20px 0; }
+    button { border:0; border-radius:999px; padding:13px 21px; background:var(--ink); color:#fff; font:650 14px inherit; cursor:pointer; } button:disabled { opacity:.55; cursor:not-allowed; }.status,.preview { display:none; margin-top:20px; padding:14px; border-radius:10px; font-size:13.5px; line-height:1.5; }.status.show,.preview.show { display:block; }.status { background:#f0efeb; color:var(--soft); }.status.error { background:#fff0ee; color:var(--danger); }.preview { border:1px solid var(--line); }.preview table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13px; }.preview th,.preview td { padding:8px; border-bottom:1px solid var(--line); text-align:left; }.preview th { color:var(--soft); }.actions { display:flex; flex-wrap:wrap; gap:9px; margin-top:16px; }.secondary { color:var(--ink); background:#fff; border:1px solid var(--line); }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand"><span class="dot"></span><span>Fieldwork</span><span class="tag">CERTIFICATE GENERATOR</span></div>
+    <h1>Create certificate batches safely.</h1>
+    <p class="lede">Upload a PDF with selectable <code>{{PLACEHOLDER}}</code> text and an XLSX spreadsheet. Review the placeholder mapping before a ZIP is created.</p>
+    <hr />
+    <form id="form">
+      <div class="field"><label class="label" for="template">Certificate template (PDF)</label><input id="template" type="file" accept=".pdf,application/pdf" required /><p class="hint">Example: <code>{{NAME}}</code>, <code>{{REGISTER_NO}}</code>.</p></div>
+      <div class="field"><label class="label" for="workbook">Data spreadsheet (XLSX)</label><input id="workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required /><p class="hint">Column names are matched regardless of case, spaces, hyphens, or underscores.</p></div>
+      <p class="hint">For this public Vercel demo, both uploads together must be under 4 MB. Files are processed only for this request and are not stored.</p>
+      <div class="actions"><button id="previewButton" type="submit">Create safe preview →</button></div>
+    </form>
+    <section class="status" id="status"></section>
+    <section class="preview" id="preview"><strong id="previewTitle"></strong><p id="previewText"></p><div id="mapping"></div><div class="actions"><button class="secondary" id="cancel" type="button">Cancel</button><button id="approve" type="button">Approve &amp; create ZIP</button></div></section>
+  </main>
+  <script>
+    const $ = id => document.getElementById(id); const MAX = 4 * 1024 * 1024;
+    const escape = value => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+    const status = (message, error=false) => { const node=$('status'); node.textContent=message; node.className='status show'+(error?' error':''); };
+    const formData = () => { const data=new FormData(); data.append('template',$('template').files[0]); data.append('workbook',$('workbook').files[0]); return data; };
+    const validate = () => { const a=$('template').files[0], b=$('workbook').files[0]; if(!a || !b) { status('Choose both files first.',true); return false; } if(a.size+b.size>MAX) { status('The PDF and XLSX together must be smaller than 4 MB for this demo.',true); return false; } return true; };
+    $('form').onsubmit=async event=>{ event.preventDefault(); if(!validate()) return; $('previewButton').disabled=true; $('preview').classList.remove('show'); status('Validating the template and spreadsheet…'); try { const response=await fetch('/api/preview',{method:'POST',body:formData()}); const data=await response.json(); if(!response.ok) throw Error(data.error||'Could not create a preview.'); const rows=data.data.rows||[]; $('previewTitle').textContent=data.summary; $('previewText').textContent=(data.warnings||[]).join(' ')||'Nothing has been created yet.'; $('mapping').innerHTML='<table><thead><tr><th>Certificate placeholder</th><th>Excel column</th></tr></thead><tbody>'+rows.map(row=>'<tr>'+row.map(value=>'<td>'+escape(value)+'</td>').join('')+'</tr>').join('')+'</tbody></table>'; $('preview').classList.add('show'); status('Preview ready. Approve only if the mapping is correct.'); } catch(error) { status(error.message,true); } finally { $('previewButton').disabled=false; } };
+    $('cancel').onclick=()=>{ $('preview').classList.remove('show'); status('Preview cancelled. No file was created.'); };
+    $('approve').onclick=async()=>{ if(!validate()) return; $('approve').disabled=true; status('Creating your ZIP…'); try { const response=await fetch('/api/create',{method:'POST',body:formData()}); if(!response.ok) { const data=await response.json(); throw Error(data.error||'Could not create the ZIP.'); } const blob=await response.blob(); const url=URL.createObjectURL(blob); const link=document.createElement('a'); link.href=url; link.download='certificates.zip'; link.click(); URL.revokeObjectURL(url); $('preview').classList.remove('show'); status('Your ZIP is ready and has been downloaded.'); } catch(error) { status(error.message,true); } finally { $('approve').disabled=false; } };
+  </script>
+</body>
+</html>

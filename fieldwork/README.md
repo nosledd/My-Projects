@@ -34,6 +34,10 @@ from environment variables at startup.
 
 ## Hosting certificate generation
 
+For a no-server, Vercel-specific certificate demo, follow
+[DEPLOY_VERCEL.md](DEPLOY_VERCEL.md). It is stateless, does not use Gemma, and
+has a 4 MB combined-upload limit.
+
 The repository is a monorepo. The deployable application is in `fieldwork/`.
 For a small public beta, deploy it as a Docker web service and use
 `fieldwork/Dockerfile` from the repository root. It binds to the platform's
