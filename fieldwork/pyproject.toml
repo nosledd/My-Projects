@@ -37,6 +37,9 @@ ocr = [
 [tool.setuptools]
 package-dir = { "" = "src" }
 
+[tool.vercel]
+entrypoint = "app:app"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

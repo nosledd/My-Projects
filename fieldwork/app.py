@@ -15,7 +15,7 @@ from tempfile import TemporaryDirectory
 from flask import Flask, jsonify, request, send_file
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from automation.adapters.tools.certificate_output import (  # noqa: E402
@@ -85,13 +85,12 @@ def _prepare(template_upload: object, workbook_upload: object):
 
 
 @app.get("/")
-def homepage_or_health():
-    """Serve the page, or the health response routed by Vercel."""
-    if request.args.get("route") == "health":
-        return jsonify({"status": "ok", "service": "fieldwork-vercel-certificate-demo"})
+def homepage():
+    """Serve the public certificate interface."""
     return send_file(PROJECT_ROOT / "index.html", mimetype="text/html")
 
 
+@app.post("/api/preview")
 def preview():
     """Validate inputs and return a preview.  No output file is created here."""
     try:
@@ -117,6 +116,7 @@ def preview():
         return _error("The files could not be processed. Confirm that the PDF uses selectable {{PLACEHOLDER}} text and the spreadsheet is valid.")
 
 
+@app.post("/api/create")
 def create():
     """Generate the ZIP only after the browser submits an explicit approval."""
     try:
@@ -142,15 +142,9 @@ def create():
         return _error("The certificates could not be created. Check the placeholder template and Excel data, then try again.")
 
 
-@app.post("/")
-def api_request():
-    """Dispatch a Vercel rewrite without depending on process-local state."""
-    route = request.args.get("route", "").strip("/")
-    if route == "preview":
-        return preview()
-    if route == "create":
-        return create()
-    return _error("API route not found.", 404)
+@app.get("/api/health")
+def health():
+    return jsonify({"status": "ok", "service": "fieldwork-vercel-certificate-demo"})
 
 
 @app.errorhandler(413)
