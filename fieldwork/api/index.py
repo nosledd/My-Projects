@@ -84,6 +84,12 @@ def _prepare(template_upload: object, workbook_upload: object):
         yield template_path, mapping, rows, headers, required
 
 
+@app.get("/")
+def homepage():
+    """Serve the public certificate interface when Vercel routes `/` to Flask."""
+    return send_file(PROJECT_ROOT / "index.html", mimetype="text/html")
+
+
 @app.post("/api/preview")
 def preview():
     """Validate inputs and return a preview.  No output file is created here."""
