@@ -36,7 +36,7 @@ Use this JSON structure:
 
 User's task: {task}"""
 
-# 3. Call the Ollama API using Gemma 3
+# 3. Calls the Ollama API using Gemma 3.
 try:
     response = ollama.chat(
         model="gemma3:4b",
